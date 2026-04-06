@@ -107,7 +107,7 @@ export function useAuth() {
       .from('profiles')
       .update(updates)
       .eq('id', user.id)
-      .select()
+      .select('*')
       .single();
 
     if (updateError) {
@@ -115,7 +115,12 @@ export function useAuth() {
       return;
     }
 
-    setProfile(data);
+    if (data) {
+      setProfile(data);
+    } else {
+      // Refetch to ensure state is current
+      await fetchProfile(user.id);
+    }
   };
 
   return {

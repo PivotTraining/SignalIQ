@@ -15,7 +15,7 @@ export default function IntegrationsPage() {
       setHunterKey(profile.hunter_api_key ?? '');
       setPdlKey(profile.pdl_api_key ?? '');
     }
-  }, [profile]);
+  }, [profile?.hunter_api_key, profile?.pdl_api_key]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

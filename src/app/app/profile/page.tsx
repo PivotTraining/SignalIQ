@@ -10,27 +10,34 @@ export default function ProfilePage() {
   const [offerText, setOfferText] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
-      setFullName(profile.full_name);
-      setBusinessName(profile.business_name);
-      setOfferText(profile.offer_text);
+      setFullName(profile.full_name ?? '');
+      setBusinessName(profile.business_name ?? '');
+      setOfferText(profile.offer_text ?? '');
     }
-  }, [profile]);
+  }, [profile?.full_name, profile?.business_name, profile?.offer_text]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setSaved(false);
-    await updateProfile({
-      full_name: fullName,
-      business_name: businessName,
-      offer_text: offerText,
-    });
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setLocalError(null);
+    try {
+      await updateProfile({
+        full_name: fullName,
+        business_name: businessName,
+        offer_text: offerText,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -42,7 +49,7 @@ export default function ProfilePage() {
       <h1 className="font-display text-3xl font-bold mb-6">Profile</h1>
 
       <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-rim/50 p-6 space-y-5">
-        {error && <div className="bg-hot/10 text-hot text-sm p-3 rounded-lg">{error}</div>}
+        {(error || localError) && <div className="bg-hot/10 text-hot text-sm p-3 rounded-lg">{error || localError}</div>}
         {saved && <div className="bg-fresh/10 text-fresh text-sm p-3 rounded-lg">Profile saved!</div>}
 
         <div>
