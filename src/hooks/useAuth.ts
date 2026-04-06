@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Profile, ProfileUpdate } from '@/types/database';
 import type { User } from '@supabase/supabase-js';
@@ -12,7 +12,8 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
 
   const fetchProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -36,7 +37,7 @@ export function useAuth() {
     initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (_event, session) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
         if (currentUser) {
@@ -44,15 +45,11 @@ export function useAuth() {
         } else {
           setProfile(null);
         }
-
-        if (event === 'SIGNED_OUT') {
-          router.push('/login');
-        }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, [supabase, fetchProfile, router]);
+  }, [supabase, fetchProfile]);
 
   const signUp = async (email: string, password: string, fullName: string) => {
     setError(null);
@@ -73,7 +70,7 @@ export function useAuth() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ full_name: fullName }),
       });
-      router.push('/onboarding');
+      router.push('/app/dashboard');
     }
   };
 
@@ -89,7 +86,9 @@ export function useAuth() {
       return;
     }
 
-    router.push('/app/dashboard');
+    const redirect = searchParams.get('redirect');
+    router.push(redirect ?? '/app/dashboard');
+    router.refresh();
   };
 
   const signOut = async () => {
@@ -97,6 +96,7 @@ export function useAuth() {
     setUser(null);
     setProfile(null);
     router.push('/login');
+    router.refresh();
   };
 
   const updateProfile = async (updates: ProfileUpdate) => {
