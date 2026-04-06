@@ -13,10 +13,30 @@ interface DiscoveredContact {
   source: string;
 }
 
+interface CompanySuggestion {
+  name: string;
+  domain: string;
+  logo: string;
+}
+
+/* ── Debounce hook ── */
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 /* ── 3-Step Discovery Flow ── */
 function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [query, setQuery] = useState('');
   const [company, setCompany] = useState('');
+  const [domain, setDomain] = useState('');
+  const [suggestions, setSuggestions] = useState<CompanySuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [searching, setSearching] = useState(false);
   const [contacts, setContacts] = useState<DiscoveredContact[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -24,10 +44,38 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
 
-  // Step 1 → 2: Search
-  const handleSearch = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!company.trim()) return;
+  const debouncedQuery = useDebounce(query, 250);
+
+  // Autocomplete: fetch suggestions as user types
+  useEffect(() => {
+    if (debouncedQuery.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(`/api/prospects/discover?q=${encodeURIComponent(debouncedQuery)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          setSuggestions(data.suggestions ?? []);
+          setShowSuggestions(true);
+        }
+      })
+      .catch(() => { /* ignore */ });
+
+    return () => { cancelled = true; };
+  }, [debouncedQuery]);
+
+  // Pick a suggestion → go straight to Hunter search
+  const pickCompany = async (suggestion: CompanySuggestion) => {
+    setQuery(suggestion.name);
+    setCompany(suggestion.name);
+    setDomain(suggestion.domain);
+    setShowSuggestions(false);
+    setSuggestions([]);
+
     setSearching(true);
     setError(null);
     setContacts([]);
@@ -36,7 +84,7 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
       const res = await fetch('/api/prospects/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company: company.trim() }),
+        body: JSON.stringify({ company: suggestion.name, domain: suggestion.domain }),
       });
       const data = await res.json();
 
@@ -53,6 +101,17 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
     } finally {
       setSearching(false);
     }
+  };
+
+  // Fallback: press Enter to search the top suggestion (or raw query)
+  const handleSearch = async (e: FormEvent) => {
+    e.preventDefault();
+    if (suggestions.length > 0) {
+      await pickCompany(suggestions[0]);
+      return;
+    }
+    if (!query.trim()) return;
+    setError('Type a company name and pick from the dropdown.');
   };
 
   // Step 2 → 3: Save selected contacts
@@ -89,7 +148,10 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
   // Reset
   const handleReset = () => {
     setStep(1);
+    setQuery('');
     setCompany('');
+    setDomain('');
+    setSuggestions([]);
     setContacts([]);
     setSelected(new Set());
     setSavedCount(0);
@@ -128,24 +190,59 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
 
       {error && <div className="bg-hot/10 text-hot text-sm p-3 rounded-lg mb-4">{error}</div>}
 
-      {/* Step 1: Search */}
+      {/* Step 1: Search with autocomplete */}
       {step === 1 && (
-        <form onSubmit={handleSearch} className="flex gap-3">
-          <input
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-            placeholder="Enter a company name — e.g. Acme Corp"
-            required
-            autoFocus
-            className="flex-1 rounded-lg border-rim bg-surface px-4 py-3 text-sm focus:ring-gold focus:border-gold"
-          />
-          <button
-            type="submit"
-            disabled={searching}
-            className="bg-gold text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-gold/90 disabled:opacity-50 whitespace-nowrap"
-          >
-            {searching ? 'Searching...' : 'Find Contacts'}
-          </button>
+        <form onSubmit={handleSearch} className="relative">
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <input
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                placeholder="Search any company — e.g. Salesforce, Nike, Stripe..."
+                autoFocus
+                className="w-full rounded-lg border-rim bg-surface px-4 py-3 text-sm focus:ring-gold focus:border-gold"
+              />
+
+              {/* Autocomplete dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-card border border-rim/50 rounded-lg shadow-lg overflow-hidden">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.domain}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickCompany(s)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-hover/50 transition-colors border-b border-rim/10 last:border-0"
+                    >
+                      {s.logo ? (
+                        <img src={s.logo} alt="" className="w-6 h-6 rounded" />
+                      ) : (
+                        <div className="w-6 h-6 rounded bg-rim/20 flex items-center justify-center text-[10px] font-bold text-ink/40">
+                          {s.name.charAt(0)}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{s.name}</p>
+                        <p className="text-xs text-ink/40">{s.domain}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={searching || query.length < 2}
+              className="bg-gold text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-gold/90 disabled:opacity-50 whitespace-nowrap"
+            >
+              {searching ? 'Searching...' : 'Find Contacts'}
+            </button>
+          </div>
+          {searching && (
+            <p className="text-xs text-ink/40 mt-2">Searching contacts at {domain || '...'}...</p>
+          )}
         </form>
       )}
 
