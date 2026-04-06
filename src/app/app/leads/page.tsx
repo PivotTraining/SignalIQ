@@ -4,116 +4,267 @@ import { useEffect, useState, FormEvent } from 'react';
 import { useProspects } from '@/hooks/useProspects';
 import type { SignalStrength, ProspectStage } from '@/types/database';
 
-function AddProspectModal({
-  onClose,
-  onAdd,
-}: {
-  onClose: () => void;
-  onAdd: (p: { name: string; company: string; title?: string; email?: string; industry?: string; signal_text?: string; signal_strength?: SignalStrength }) => void;
-}) {
-  const [name, setName] = useState('');
-  const [company, setCompany] = useState('');
-  const [title, setTitle] = useState('');
-  const [email, setEmail] = useState('');
-  const [industry, setIndustry] = useState('');
-  const [signalText, setSignalText] = useState('');
-  const [strength, setStrength] = useState<SignalStrength>('warm');
+/* ── Types ── */
+interface DiscoveredContact {
+  name: string;
+  email: string | null;
+  title: string | null;
+  confidence: number;
+  source: string;
+}
 
-  const handleSubmit = (e: FormEvent) => {
+/* ── 3-Step Discovery Flow ── */
+function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [company, setCompany] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [contacts, setContacts] = useState<DiscoveredContact[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedCount, setSavedCount] = useState(0);
+
+  // Step 1 → 2: Search
+  const handleSearch = async (e: FormEvent) => {
     e.preventDefault();
-    onAdd({
-      name,
-      company,
-      title: title || undefined,
-      email: email || undefined,
-      industry: industry || undefined,
-      signal_text: signalText || undefined,
-      signal_strength: strength,
+    if (!company.trim()) return;
+    setSearching(true);
+    setError(null);
+    setContacts([]);
+
+    try {
+      const res = await fetch('/api/prospects/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: company.trim() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? 'Search failed');
+        return;
+      }
+
+      setContacts(data.contacts);
+      setSelected(new Set(data.contacts.map((_: DiscoveredContact, i: number) => i)));
+      setStep(2);
+    } catch {
+      setError('Search failed — check your connection');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Step 2 → 3: Save selected contacts
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    let count = 0;
+
+    for (const idx of selected) {
+      const contact = contacts[idx];
+      if (!contact) continue;
+
+      const res = await fetch('/api/prospects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: contact.name,
+          company,
+          title: contact.title,
+          email: contact.email,
+          signal_strength: 'warm',
+        }),
+      });
+
+      if (res.ok) count++;
+    }
+
+    setSavedCount(count);
+    setSaving(false);
+    setStep(3);
+    onSaved();
+  };
+
+  // Reset
+  const handleReset = () => {
+    setStep(1);
+    setCompany('');
+    setContacts([]);
+    setSelected(new Set());
+    setSavedCount(0);
+    setError(null);
+  };
+
+  const toggleSelect = (idx: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
     });
   };
 
   return (
-    <div className="fixed inset-0 bg-ink/50 flex items-center justify-center z-50 p-4">
-      <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-rim/50 p-6 w-full max-w-lg space-y-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-display text-lg font-semibold">Add Prospect</h3>
-          <button type="button" onClick={onClose} className="text-ink/40 hover:text-ink text-xl">&times;</button>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-medium mb-1">Name *</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
+    <div className="bg-card rounded-xl border border-gold/30 p-6 mb-8">
+      {/* Step indicators */}
+      <div className="flex items-center gap-3 mb-5">
+        {[
+          { n: 1, label: 'Search' },
+          { n: 2, label: 'Find' },
+          { n: 3, label: 'Save' },
+        ].map(({ n, label }) => (
+          <div key={n} className="flex items-center gap-2">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+              step >= n ? 'bg-gold text-white' : 'bg-rim/30 text-ink/40'
+            }`}>
+              {step > n ? '✓' : n}
+            </div>
+            <span className={`text-sm font-medium ${step >= n ? 'text-ink' : 'text-ink/40'}`}>{label}</span>
+            {n < 3 && <div className={`w-8 h-0.5 ${step > n ? 'bg-gold' : 'bg-rim/30'}`} />}
           </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Company *</label>
-            <input value={company} onChange={(e) => setCompany(e.target.value)} required className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Industry</label>
-            <input value={industry} onChange={(e) => setIndustry(e.target.value)} className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Signal Strength</label>
-            <select value={strength} onChange={(e) => setStrength(e.target.value as SignalStrength)} className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm">
-              <option value="hot">Hot</option>
-              <option value="warm">Warm</option>
-              <option value="trigger">Trigger</option>
-            </select>
-          </div>
-        </div>
+        ))}
+      </div>
+
+      {error && <div className="bg-hot/10 text-hot text-sm p-3 rounded-lg mb-4">{error}</div>}
+
+      {/* Step 1: Search */}
+      {step === 1 && (
+        <form onSubmit={handleSearch} className="flex gap-3">
+          <input
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            placeholder="Enter a company name — e.g. Acme Corp"
+            required
+            autoFocus
+            className="flex-1 rounded-lg border-rim bg-surface px-4 py-3 text-sm focus:ring-gold focus:border-gold"
+          />
+          <button
+            type="submit"
+            disabled={searching}
+            className="bg-gold text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-gold/90 disabled:opacity-50 whitespace-nowrap"
+          >
+            {searching ? 'Searching...' : 'Find Contacts'}
+          </button>
+        </form>
+      )}
+
+      {/* Step 2: Select contacts */}
+      {step === 2 && (
         <div>
-          <label className="block text-xs font-medium mb-1">Buying Signal</label>
-          <textarea value={signalText} onChange={(e) => setSignalText(e.target.value)} rows={2} className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-ink/60">
+              Found <span className="font-semibold text-ink">{contacts.length}</span> contacts at <span className="font-semibold text-ink">{company}</span>
+            </p>
+            <button onClick={handleReset} className="text-xs text-ink/40 hover:text-ink">Search again</button>
+          </div>
+
+          {contacts.length === 0 ? (
+            <div className="text-center py-8 text-ink/40">
+              <p className="mb-2">No contacts found for this company.</p>
+              <button onClick={handleReset} className="text-gold text-sm hover:underline">Try a different company</button>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto">
+                {contacts.map((c, i) => (
+                  <label
+                    key={i}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      selected.has(i) ? 'border-gold/50 bg-gold/5' : 'border-rim/30 hover:border-rim'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(i)}
+                      onChange={() => toggleSelect(i)}
+                      className="rounded border-rim text-gold focus:ring-gold"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{c.name}</p>
+                      <p className="text-xs text-ink/50 truncate">
+                        {c.title ?? 'No title'} {c.email && `· ${c.email}`}
+                      </p>
+                    </div>
+                    {c.confidence > 0 && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        c.confidence >= 80 ? 'bg-fresh/10 text-fresh'
+                          : c.confidence >= 50 ? 'bg-warm/10 text-warm'
+                          : 'bg-rim/20 text-ink/40'
+                      }`}>
+                        {c.confidence}%
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              <button
+                onClick={handleSave}
+                disabled={selected.size === 0 || saving}
+                className="bg-gold text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-gold/90 disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : `Save ${selected.size} Contact${selected.size !== 1 ? 's' : ''} to Pipeline`}
+              </button>
+            </>
+          )}
         </div>
-        <div className="flex gap-3 justify-end pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-ink/60 hover:text-ink">Cancel</button>
-          <button type="submit" className="bg-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gold/90">Add Prospect</button>
+      )}
+
+      {/* Step 3: Done */}
+      {step === 3 && (
+        <div className="text-center py-4">
+          <div className="text-3xl mb-2">✓</div>
+          <p className="font-medium text-fresh">{savedCount} contact{savedCount !== 1 ? 's' : ''} added to your pipeline</p>
+          <p className="text-sm text-ink/50 mt-1">Now generate outreach packages for them on the Generate tab.</p>
+          <button onClick={handleReset} className="mt-4 text-gold text-sm hover:underline">Find more leads</button>
         </div>
-      </form>
+      )}
     </div>
   );
 }
 
+/* ── Main Page ── */
 const STAGES: ProspectStage[] = ['new', 'contacted', 'meeting', 'proposal', 'closed'];
 
 export default function LeadsPage() {
   const { prospects, loading, error, refresh, create, updateStage, remove, filter } = useProspects();
-  const [showAdd, setShowAdd] = useState(false);
+  const [showManualAdd, setShowManualAdd] = useState(false);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('');
   const [strengthFilter, setStrengthFilter] = useState<string>('');
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const handleFilter = () => {
+  useEffect(() => {
     filter({
       search: search || undefined,
       stage: (stageFilter || undefined) as ProspectStage | undefined,
       strength: (strengthFilter || undefined) as SignalStrength | undefined,
     });
-  };
-
-  useEffect(() => { handleFilter(); }, [search, stageFilter, strengthFilter]);
+  }, [search, stageFilter, strengthFilter]);
 
   return (
     <div className="max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-display text-3xl font-bold">Leads</h1>
-        <button onClick={() => setShowAdd(true)} className="bg-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gold/90">
-          + Add Prospect
+        <button onClick={() => setShowManualAdd(!showManualAdd)} className="text-sm text-ink/50 hover:text-ink">
+          {showManualAdd ? 'Cancel' : '+ Add manually'}
         </button>
       </div>
 
+      {/* 3-Step Discovery */}
+      <DiscoverFlow onSaved={() => refresh()} />
+
+      {/* Manual add (collapsed by default) */}
+      {showManualAdd && (
+        <ManualAddForm
+          onAdd={async (p) => { await create(p); setShowManualAdd(false); }}
+          onClose={() => setShowManualAdd(false)}
+        />
+      )}
+
       {/* Filters */}
-      <div className="flex gap-3 mb-6 flex-wrap">
+      <div className="flex gap-3 mb-4 flex-wrap">
         <input
           placeholder="Search name, company, signal..."
           value={search}
@@ -137,9 +288,8 @@ export default function LeadsPage() {
       {loading ? (
         <div className="text-center py-12 text-ink/40">Loading prospects...</div>
       ) : prospects.length === 0 ? (
-        <div className="text-center py-20 text-ink/40">
-          <p className="text-lg mb-2">No prospects yet</p>
-          <p className="text-sm">Add your first prospect or use the Signal Scanner to find leads.</p>
+        <div className="text-center py-12 text-ink/40">
+          <p className="text-sm">No prospects yet — use the search above to find your first leads.</p>
         </div>
       ) : (
         <div className="bg-card rounded-xl border border-rim/50 overflow-hidden">
@@ -188,16 +338,48 @@ export default function LeadsPage() {
           </table>
         </div>
       )}
-
-      {showAdd && (
-        <AddProspectModal
-          onClose={() => setShowAdd(false)}
-          onAdd={async (p) => {
-            await create(p);
-            setShowAdd(false);
-          }}
-        />
-      )}
     </div>
+  );
+}
+
+/* ── Manual Add (inline form, not modal) ── */
+function ManualAddForm({
+  onAdd,
+  onClose,
+}: {
+  onAdd: (p: { name: string; company: string; title?: string; email?: string; signal_strength?: SignalStrength }) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [company, setCompany] = useState('');
+  const [title, setTitle] = useState('');
+  const [email, setEmail] = useState('');
+
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); onAdd({ name, company, title: title || undefined, email: email || undefined }); }}
+      className="bg-card rounded-xl border border-rim/50 p-5 mb-6 grid grid-cols-2 md:grid-cols-5 gap-3 items-end"
+    >
+      <div>
+        <label className="block text-xs font-medium mb-1">Name *</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} required className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium mb-1">Company *</label>
+        <input value={company} onChange={(e) => setCompany(e.target.value)} required className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium mb-1">Title</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium mb-1">Email</label>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border-rim bg-surface px-3 py-2 text-sm" />
+      </div>
+      <div className="flex gap-2">
+        <button type="submit" className="bg-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gold/90">Add</button>
+        <button type="button" onClick={onClose} className="text-sm text-ink/40 hover:text-ink px-2">Cancel</button>
+      </div>
+    </form>
   );
 }
