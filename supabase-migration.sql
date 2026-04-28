@@ -56,6 +56,7 @@ create table public.prospects (
   emails text,
   script text,
   notes text,
+  priority text check (priority in ('high', 'medium', 'low')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

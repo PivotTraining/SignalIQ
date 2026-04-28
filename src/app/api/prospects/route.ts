@@ -78,6 +78,8 @@ export async function POST(request: NextRequest) {
         signal_text: body.signal_text ?? null,
         signal_strength: body.signal_strength ?? 'warm',
         stage: body.stage ?? 'new',
+        notes: body.notes ?? null,
+        priority: body.priority ?? null,
       })
       .select()
       .single();
@@ -86,12 +88,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Log the creation
-    await supabase.from('activity_log').insert({
-      user_id: user.id,
-      action: 'prospect_created',
-      detail: `${body.name} at ${body.company}`,
-    });
+    // Log the creation — wrapped so a missing profile row never breaks contact creation
+    try {
+      await supabase.from('activity_log').insert({
+        user_id: user.id,
+        action: 'prospect_created',
+        detail: `${body.name} at ${body.company}`,
+      });
+    } catch {
+      // Non-fatal — log silently
+    }
 
     return NextResponse.json({ prospect: data }, { status: 201 });
   } catch {

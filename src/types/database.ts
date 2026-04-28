@@ -1,6 +1,7 @@
 export type Plan = 'starter' | 'pro' | 'agency';
 export type SignalStrength = 'hot' | 'warm' | 'trigger';
 export type ProspectStage = 'new' | 'contacted' | 'meeting' | 'proposal' | 'closed';
+export type ProspectPriority = 'high' | 'medium' | 'low' | null;
 
 export interface Database {
   public: {
@@ -96,6 +97,7 @@ export interface Database {
           emails: string | null;
           script: string | null;
           notes: string | null;
+          priority: ProspectPriority;
           created_at: string;
           updated_at: string;
         };
@@ -117,6 +119,7 @@ export interface Database {
           emails?: string | null;
           script?: string | null;
           notes?: string | null;
+          priority?: ProspectPriority;
         };
         Update: {
           name?: string;
@@ -134,6 +137,7 @@ export interface Database {
           emails?: string | null;
           script?: string | null;
           notes?: string | null;
+          priority?: ProspectPriority;
           updated_at?: string;
         };
         Relationships: [];

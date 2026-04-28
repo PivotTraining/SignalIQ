@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import type { Prospect, ProspectUpdate, SignalStrength, ProspectStage } from '@/types/database';
+import type { Prospect, ProspectUpdate, SignalStrength, ProspectStage, ProspectPriority } from '@/types/database';
 
 interface Filters {
   strength?: SignalStrength;
@@ -131,6 +131,8 @@ export function useProspects() {
   };
 
   const updateStage = (id: string, stage: ProspectStage) => update(id, { stage });
+  const updateNotes = (id: string, notes: string | null) => update(id, { notes });
+  const updatePriority = (id: string, priority: ProspectPriority) => update(id, { priority });
 
   const filter = (filters: Filters) => {
     setActiveFilters(filters);
@@ -155,6 +157,8 @@ export function useProspects() {
     update,
     remove,
     updateStage,
+    updateNotes,
+    updatePriority,
     filter,
   };
 }
