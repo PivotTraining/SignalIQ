@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, FormEvent } from 'react';
 import { useProspects } from '@/hooks/useProspects';
-import type { SignalStrength, ProspectStage, ProspectPriority } from '@/types/database';
+import type { Prospect, SignalStrength, ProspectStage, ProspectPriority } from '@/types/database';
 
 /* ── Types ── */
 interface DiscoveredContact {
@@ -29,11 +29,17 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-/* ── Priority Select ── */
+/* ── Priority styles ── */
 const PRIORITY_STYLES: Record<string, string> = {
-  high: 'bg-hot/10 text-hot border border-hot/20',
-  medium: 'bg-warm/10 text-warm border border-warm/20',
-  low: 'bg-teal/10 text-teal border border-teal/20',
+  high: 'bg-hot/10 text-hot border border-hot/30',
+  medium: 'bg-warm/10 text-warm border border-warm/30',
+  low: 'bg-teal/10 text-teal border border-teal/30',
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
 };
 
 function PrioritySelect({
@@ -46,11 +52,12 @@ function PrioritySelect({
   return (
     <select
       value={value ?? ''}
+      onClick={(e) => e.stopPropagation()}
       onChange={(e) => onChange((e.target.value as ProspectPriority) || null)}
-      className={`text-xs rounded-full px-2 py-1 border-0 outline-none cursor-pointer font-medium appearance-none ${
-        value ? PRIORITY_STYLES[value] : 'bg-rim/10 text-ink/30 border border-rim/20'
+      className={`text-xs rounded-full px-2 py-1 border outline-none cursor-pointer font-medium appearance-none ${
+        value ? PRIORITY_STYLES[value] : 'bg-rim/10 text-ink/30 border-rim/20'
       }`}
-      style={{ minWidth: 72 }}
+      style={{ minWidth: 76 }}
     >
       <option value="">— None</option>
       <option value="high">High</option>
@@ -74,7 +81,8 @@ function NotesCell({
   const [draft, setDraft] = useState(value ?? '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const open = () => {
+  const open = (e: React.MouseEvent) => {
+    e.stopPropagation();
     setDraft(value ?? '');
     setEditing(true);
     setTimeout(() => textareaRef.current?.focus(), 0);
@@ -104,7 +112,7 @@ function NotesCell({
           }}
           rows={2}
           className="w-full rounded border border-gold/40 bg-surface px-2 py-1 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-gold/50"
-          placeholder="Add a note... (Enter to save, Esc to cancel)"
+          placeholder="Add a note… (Enter to save, Esc to cancel)"
         />
         <div className="flex gap-2">
           <button onClick={save} className="text-[10px] text-gold hover:underline font-medium">Save</button>
@@ -129,6 +137,320 @@ function NotesCell({
           + note
         </span>
       )}
+    </div>
+  );
+}
+
+/* ── Inline Date Picker ── */
+function LastContactedCell({
+  value,
+  onSave,
+}: {
+  value: string | null;
+  onSave: (v: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditing(true);
+  };
+
+  if (editing) {
+    return (
+      <input
+        type="date"
+        defaultValue={value?.slice(0, 10) ?? ''}
+        onChange={(e) => { onSave(e.target.value || null); setEditing(false); }}
+        onBlur={() => setEditing(false)}
+        onClick={(e) => e.stopPropagation()}
+        autoFocus
+        className="text-xs rounded border-rim bg-surface px-2 py-1"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      className="text-xs text-ink/50 hover:text-ink whitespace-nowrap"
+    >
+      {value ? formatDate(value) : '+ Set date'}
+    </button>
+  );
+}
+
+/* ── Profile Panel ── */
+function ProfilePanel({
+  prospect,
+  onClose,
+  onUpdate,
+  onRemove,
+}: {
+  prospect: Prospect;
+  onClose: () => void;
+  onUpdate: (id: string, updates: Partial<Prospect>) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'outreach' | 'notes'>('overview');
+  const [notesDraft, setNotesDraft] = useState(prospect.notes ?? '');
+  const [notesSaved, setNotesSaved] = useState(false);
+  const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync draft if prospect changes externally
+  useEffect(() => {
+    setNotesDraft(prospect.notes ?? '');
+  }, [prospect.notes]);
+
+  const handleNotesChange = (val: string) => {
+    setNotesDraft(val);
+    setNotesSaved(false);
+    if (notesTimer.current) clearTimeout(notesTimer.current);
+    notesTimer.current = setTimeout(() => {
+      onUpdate(prospect.id, { notes: val.trim() || null });
+      setNotesSaved(true);
+    }, 800);
+  };
+
+  const initials = prospect.name
+    .split(' ')
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  const hasOutreach = prospect.brief || prospect.emails || prospect.script;
+
+  return (
+    <div className="fixed inset-0 z-50 flex" onClick={onClose}>
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/40" />
+
+      {/* Panel */}
+      <div
+        className="w-full max-w-xl bg-surface border-l border-rim/50 flex flex-col h-full overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start gap-4 p-6 border-b border-rim/30">
+          {/* Avatar */}
+          <div className="w-12 h-12 rounded-full bg-gold/20 border border-gold/30 flex items-center justify-center text-gold font-bold text-lg flex-shrink-0">
+            {initials}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <h2 className="font-display text-xl font-bold truncate">{prospect.name}</h2>
+            <p className="text-sm text-ink/60 truncate">
+              {[prospect.title, prospect.company].filter(Boolean).join(' · ')}
+            </p>
+
+            {/* Priority + Stage row */}
+            <div className="flex items-center gap-2 mt-2">
+              <PrioritySelect
+                value={prospect.priority ?? null}
+                onChange={(v) => onUpdate(prospect.id, { priority: v })}
+              />
+              <select
+                value={prospect.stage}
+                onChange={(e) => onUpdate(prospect.id, { stage: e.target.value as ProspectStage })}
+                className="text-xs rounded-full px-2 py-1 border border-rim/30 bg-lift text-ink/70 outline-none cursor-pointer appearance-none"
+              >
+                {STAGES.map((s) => (
+                  <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="text-ink/30 hover:text-ink transition-colors p-1 flex-shrink-0"
+            aria-label="Close"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-rim/30 px-6">
+          {(['overview', 'notes', 'outreach'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`text-sm font-medium py-3 mr-6 border-b-2 transition-colors ${
+                activeTab === tab
+                  ? 'border-gold text-ink'
+                  : 'border-transparent text-ink/40 hover:text-ink/60'
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'outreach' && hasOutreach && (
+                <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-gold inline-block" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── Overview Tab ── */}
+          {activeTab === 'overview' && (
+            <div className="p-6 space-y-5">
+
+              {/* Contact Info */}
+              <section>
+                <h3 className="text-xs font-semibold text-ink/40 uppercase tracking-wider mb-3">Contact Info</h3>
+                <div className="space-y-2">
+                  {prospect.email && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-ink/30 w-4">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M1 4.5l6 4 6-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                      </span>
+                      <a href={`mailto:${prospect.email}`} className="text-sm text-ink/80 hover:text-gold transition-colors">{prospect.email}</a>
+                    </div>
+                  )}
+                  {prospect.phone && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-ink/30 w-4">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A1.5 1.5 0 013.5 1h1a1.5 1.5 0 011.5 1.5v1a1.5 1.5 0 01-1.5 1.5h-.25C4.5 7.5 6.5 9.5 9 9.75V9.5A1.5 1.5 0 0110.5 8h1A1.5 1.5 0 0113 9.5v1A1.5 1.5 0 0111.5 12C6.25 12 2 7.75 2 2.5z" stroke="currentColor" strokeWidth="1.2"/></svg>
+                      </span>
+                      <a href={`tel:${prospect.phone}`} className="text-sm text-ink/80 hover:text-gold transition-colors">{prospect.phone}</a>
+                    </div>
+                  )}
+                  {prospect.linkedin_url && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-ink/30 w-4">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2"/><path d="M4 6v4M4 4.5v.5M7 10V8a1 1 0 012 0v2M7 6v1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                      </span>
+                      <a href={prospect.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-sm text-ink/80 hover:text-gold transition-colors truncate max-w-[300px]">LinkedIn Profile</a>
+                    </div>
+                  )}
+                  {prospect.location && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-ink/30 w-4">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1a4 4 0 014 4c0 3-4 8-4 8S3 8 3 5a4 4 0 014-4z" stroke="currentColor" strokeWidth="1.2"/><circle cx="7" cy="5" r="1.2" stroke="currentColor" strokeWidth="1.2"/></svg>
+                      </span>
+                      <span className="text-sm text-ink/70">{prospect.location}</span>
+                    </div>
+                  )}
+                  {prospect.industry && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-ink/30 w-4">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="5" width="3" height="8" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="5.5" y="2" width="3" height="11" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="10" y="7" width="3" height="6" rx="1" stroke="currentColor" strokeWidth="1.2"/></svg>
+                      </span>
+                      <span className="text-sm text-ink/70">{prospect.industry}</span>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Last Contacted */}
+              <section>
+                <h3 className="text-xs font-semibold text-ink/40 uppercase tracking-wider mb-3">Last Contacted</h3>
+                <LastContactedCell
+                  value={prospect.last_contacted ?? null}
+                  onSave={(v) => onUpdate(prospect.id, { last_contacted: v })}
+                />
+              </section>
+
+              {/* Signal Context */}
+              {prospect.signal_text && (
+                <section>
+                  <h3 className="text-xs font-semibold text-ink/40 uppercase tracking-wider mb-3">Signal Context</h3>
+                  <p className="text-sm text-ink/70 leading-relaxed bg-lift rounded-lg p-3 border border-rim/20">
+                    {prospect.signal_text}
+                  </p>
+                </section>
+              )}
+
+              {/* Added date */}
+              <section>
+                <p className="text-xs text-ink/30">
+                  Added {formatDate(prospect.created_at)}
+                  {prospect.updated_at !== prospect.created_at && ` · Updated ${formatDate(prospect.updated_at)}`}
+                </p>
+              </section>
+            </div>
+          )}
+
+          {/* ── Notes Tab ── */}
+          {activeTab === 'notes' && (
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-semibold text-ink/40 uppercase tracking-wider">Notes</h3>
+                {notesSaved && <span className="text-xs text-fresh">Saved</span>}
+              </div>
+              <textarea
+                value={notesDraft}
+                onChange={(e) => handleNotesChange(e.target.value)}
+                placeholder="Write anything — what you discussed, next steps, objections, context…"
+                className="w-full min-h-[360px] rounded-lg border border-rim/30 bg-card px-4 py-3 text-sm leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-gold/50 focus:border-gold/40 placeholder:text-ink/25"
+              />
+              <p className="text-xs text-ink/30 mt-2">Auto-saves as you type</p>
+            </div>
+          )}
+
+          {/* ── Outreach Tab ── */}
+          {activeTab === 'outreach' && (
+            <div className="p-6 space-y-6">
+              {!hasOutreach ? (
+                <div className="text-center py-12 text-ink/40">
+                  <p className="text-sm">No outreach generated yet.</p>
+                  <p className="text-xs mt-1">Go to Generate to create a brief, emails, and call script for this contact.</p>
+                </div>
+              ) : (
+                <>
+                  {prospect.brief && (
+                    <section>
+                      <h3 className="text-xs font-semibold text-ink/40 uppercase tracking-wider mb-3">Brief</h3>
+                      <div className="bg-card rounded-lg border border-rim/20 p-4 text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">
+                        {prospect.brief}
+                      </div>
+                    </section>
+                  )}
+
+                  {prospect.emails && (
+                    <section>
+                      <h3 className="text-xs font-semibold text-ink/40 uppercase tracking-wider mb-3">Email Sequence</h3>
+                      <div className="bg-card rounded-lg border border-rim/20 p-4 text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">
+                        {prospect.emails}
+                      </div>
+                    </section>
+                  )}
+
+                  {prospect.script && (
+                    <section>
+                      <h3 className="text-xs font-semibold text-ink/40 uppercase tracking-wider mb-3">Call Script</h3>
+                      <div className="bg-card rounded-lg border border-rim/20 p-4 text-sm text-ink/80 leading-relaxed whitespace-pre-wrap">
+                        {prospect.script}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-rim/30 px-6 py-4 flex items-center justify-between">
+          <button
+            onClick={() => { onRemove(prospect.id); onClose(); }}
+            className="text-xs text-hot/50 hover:text-hot transition-colors"
+          >
+            Remove contact
+          </button>
+          <button
+            onClick={onClose}
+            className="text-sm text-ink/50 hover:text-ink transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -247,7 +569,7 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
                 onChange={(e) => { setQuery(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                placeholder="Search any company — e.g. Salesforce, Nike, Stripe..."
+                placeholder="Search any company — e.g. Salesforce, Nike, Stripe…"
                 autoFocus
                 className="w-full rounded-lg border-rim bg-surface px-4 py-3 text-sm focus:ring-gold focus:border-gold"
               />
@@ -270,10 +592,10 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
             </div>
             <button type="submit" disabled={searching || query.length < 2}
               className="bg-gold text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-gold/90 disabled:opacity-50 whitespace-nowrap">
-              {searching ? 'Searching...' : 'Find Contacts'}
+              {searching ? 'Searching…' : 'Find Contacts'}
             </button>
           </div>
-          {searching && <p className="text-xs text-ink/40 mt-2">Searching contacts at {domain || '...'}...</p>}
+          {searching && <p className="text-xs text-ink/40 mt-2">Searching contacts at {domain || '…'}…</p>}
         </form>
       )}
 
@@ -308,7 +630,7 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
               </div>
               <button onClick={handleSave} disabled={selected.size === 0 || saving}
                 className="bg-gold text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-gold/90 disabled:opacity-50">
-                {saving ? 'Saving...' : `Save ${selected.size} Contact${selected.size !== 1 ? 's' : ''} to Pipeline`}
+                {saving ? 'Saving…' : `Save ${selected.size} Contact${selected.size !== 1 ? 's' : ''} to Pipeline`}
               </button>
             </>
           )}
@@ -319,7 +641,7 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
         <div className="text-center py-4">
           <div className="text-3xl mb-2">✓</div>
           <p className="font-medium text-fresh">{savedCount} contact{savedCount !== 1 ? 's' : ''} added to your pipeline</p>
-          <p className="text-sm text-ink/50 mt-1">Now generate outreach packages for them on the Generate tab.</p>
+          <p className="text-sm text-ink/50 mt-1">Open any contact to add notes and generate outreach.</p>
           <button onClick={handleReset} className="mt-4 text-gold text-sm hover:underline">Find more leads</button>
         </div>
       )}
@@ -335,46 +657,14 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-/* ── Inline Date Picker ── */
-function LastContactedCell({
-  value,
-  onSave,
-}: {
-  value: string | null;
-  onSave: (v: string | null) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-
-  if (editing) {
-    return (
-      <input
-        type="date"
-        defaultValue={value?.slice(0, 10) ?? ''}
-        onChange={(e) => { onSave(e.target.value || null); setEditing(false); }}
-        onBlur={() => setEditing(false)}
-        autoFocus
-        className="text-xs rounded border-rim bg-surface px-2 py-1"
-      />
-    );
-  }
-
-  return (
-    <button
-      onClick={() => setEditing(true)}
-      className="text-xs text-ink/50 hover:text-ink whitespace-nowrap"
-    >
-      {value ? formatDate(value) : '+ Set date'}
-    </button>
-  );
-}
-
 /* ── Main Page ── */
 export default function LeadsPage() {
-  const { prospects, loading, error, refresh, create, updateStage, updateNotes, updatePriority, updateLastContacted, remove, filter } = useProspects();
+  const { prospects, loading, error, refresh, create, update, updateStage, updateNotes, updatePriority, updateLastContacted, remove, filter } = useProspects();
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('');
-  const [strengthFilter, setStrengthFilter] = useState<string>('');
+  const [priorityFilter, setPriorityFilter] = useState<string>('');
+  const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -382,9 +672,24 @@ export default function LeadsPage() {
     filter({
       search: search || undefined,
       stage: (stageFilter || undefined) as ProspectStage | undefined,
-      strength: (strengthFilter || undefined) as SignalStrength | undefined,
     });
-  }, [search, stageFilter, strengthFilter]);
+  }, [search, stageFilter]);
+
+  // Keep panel in sync with optimistic updates
+  useEffect(() => {
+    if (!selectedProspect) return;
+    const updated = prospects.find((p) => p.id === selectedProspect.id);
+    if (updated) setSelectedProspect(updated);
+  }, [prospects]);
+
+  const handlePanelUpdate = (id: string, updates: Partial<Prospect>) => {
+    update(id, updates);
+  };
+
+  // Client-side priority filter (since API doesn't support it yet)
+  const visibleProspects = priorityFilter
+    ? prospects.filter((p) => p.priority === priorityFilter)
+    : prospects;
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -404,26 +709,31 @@ export default function LeadsPage() {
         />
       )}
 
+      {/* Filters */}
       <div className="flex gap-3 mb-4 flex-wrap">
-        <input placeholder="Search name, company, signal..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="rounded-lg border-rim bg-card px-3 py-2 text-sm flex-1 min-w-[200px]" />
+        <input
+          placeholder="Search name, company, signal…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="rounded-lg border-rim bg-card px-3 py-2 text-sm flex-1 min-w-[200px]"
+        />
         <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="rounded-lg border-rim bg-card px-3 py-2 text-sm">
           <option value="">All Stages</option>
           {STAGES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
         </select>
-        <select value={strengthFilter} onChange={(e) => setStrengthFilter(e.target.value)} className="rounded-lg border-rim bg-card px-3 py-2 text-sm">
-          <option value="">All Signals</option>
-          <option value="hot">Hot</option>
-          <option value="warm">Warm</option>
-          <option value="trigger">Trigger</option>
+        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="rounded-lg border-rim bg-card px-3 py-2 text-sm">
+          <option value="">All Priorities</option>
+          <option value="high">High Priority</option>
+          <option value="medium">Medium Priority</option>
+          <option value="low">Low Priority</option>
         </select>
       </div>
 
       {error && <div className="bg-hot/10 text-hot text-sm p-3 rounded-lg mb-4">{error}</div>}
 
       {loading ? (
-        <div className="text-center py-12 text-ink/40">Loading prospects...</div>
-      ) : prospects.length === 0 ? (
+        <div className="text-center py-12 text-ink/40">Loading prospects…</div>
+      ) : visibleProspects.length === 0 ? (
         <div className="text-center py-12 text-ink/40">
           <p className="text-sm">No prospects yet — use the search above to find your first leads.</p>
         </div>
@@ -434,7 +744,6 @@ export default function LeadsPage() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Name</th>
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Company</th>
-                <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Signal</th>
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Priority</th>
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Stage</th>
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Notes</th>
@@ -443,26 +752,27 @@ export default function LeadsPage() {
               </tr>
             </thead>
             <tbody>
-              {prospects.map((p) => (
-                <tr key={p.id} className="border-b border-rim/20 hover:bg-hover/30 transition-colors">
+              {visibleProspects.map((p) => (
+                <tr
+                  key={p.id}
+                  className="border-b border-rim/20 hover:bg-hover/30 transition-colors cursor-pointer"
+                  onClick={() => setSelectedProspect(p)}
+                >
                   <td className="px-4 py-3">
-                    <p className="font-medium whitespace-nowrap">{p.name}</p>
-                    {p.email && <p className="text-xs text-ink/40 truncate max-w-[160px]">{p.email}</p>}
+                    <p className="font-medium whitespace-nowrap text-gold hover:underline">{p.name}</p>
+                    {p.title && <p className="text-xs text-ink/40 truncate max-w-[160px]">{p.title}</p>}
                   </td>
                   <td className="px-4 py-3 text-ink/70 whitespace-nowrap">{p.company}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${
-                      p.signal_strength === 'hot' ? 'bg-hot/10 text-hot' : p.signal_strength === 'trigger' ? 'bg-warm/10 text-warm' : 'bg-teal/10 text-teal'
-                    }`}>
-                      {p.signal_strength}
-                    </span>
-                  </td>
                   <td className="px-4 py-3">
                     <PrioritySelect value={p.priority ?? null} onChange={(v) => updatePriority(p.id, v)} />
                   </td>
                   <td className="px-4 py-3">
-                    <select value={p.stage} onChange={(e) => updateStage(p.id, e.target.value as ProspectStage)}
-                      className="text-xs rounded border-rim bg-surface px-2 py-1">
+                    <select
+                      value={p.stage}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => updateStage(p.id, e.target.value as ProspectStage)}
+                      className="text-xs rounded border-rim bg-surface px-2 py-1"
+                    >
                       {STAGES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
                     </select>
                   </td>
@@ -473,13 +783,28 @@ export default function LeadsPage() {
                     <LastContactedCell value={p.last_contacted ?? null} onSave={(v) => updateLastContacted(p.id, v)} />
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button onClick={() => remove(p.id)} className="text-xs text-hot/60 hover:text-hot">Remove</button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); remove(p.id); }}
+                      className="text-xs text-hot/60 hover:text-hot"
+                    >
+                      Remove
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Profile Panel */}
+      {selectedProspect && (
+        <ProfilePanel
+          prospect={selectedProspect}
+          onClose={() => setSelectedProspect(null)}
+          onUpdate={handlePanelUpdate}
+          onRemove={remove}
+        />
       )}
     </div>
   );
@@ -536,7 +861,7 @@ function ManualAddForm({
       </div>
       <div className="flex gap-2">
         <button type="submit" disabled={submitting} className="bg-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gold/90 disabled:opacity-50">
-          {submitting ? 'Adding...' : 'Add'}
+          {submitting ? 'Adding…' : 'Add'}
         </button>
         <button type="button" onClick={onClose} className="text-sm text-ink/40 hover:text-ink px-2">Cancel</button>
       </div>
