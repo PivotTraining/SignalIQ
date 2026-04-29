@@ -98,6 +98,7 @@ export interface Database {
           script: string | null;
           notes: string | null;
           priority: ProspectPriority;
+          last_contacted: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -120,6 +121,7 @@ export interface Database {
           script?: string | null;
           notes?: string | null;
           priority?: ProspectPriority;
+          last_contacted?: string | null;
         };
         Update: {
           name?: string;
@@ -138,6 +140,7 @@ export interface Database {
           script?: string | null;
           notes?: string | null;
           priority?: ProspectPriority;
+          last_contacted?: string | null;
           updated_at?: string;
         };
         Relationships: [];

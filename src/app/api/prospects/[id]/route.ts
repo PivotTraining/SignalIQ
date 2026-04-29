@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 const UPDATABLE_FIELDS = new Set([
   'name', 'company', 'title', 'email', 'phone', 'linkedin_url',
   'industry', 'location', 'signal_text', 'signal_strength', 'stage',
-  'brief', 'emails', 'script', 'notes', 'priority',
+  'brief', 'emails', 'script', 'notes', 'priority', 'last_contacted',
 ]);
 
 export async function PATCH(

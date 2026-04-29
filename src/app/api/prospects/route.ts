@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
         stage: body.stage ?? 'new',
         notes: body.notes ?? null,
         priority: body.priority ?? null,
+        last_contacted: body.last_contacted ?? null,
       })
       .select()
       .single();

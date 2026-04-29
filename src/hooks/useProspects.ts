@@ -133,6 +133,7 @@ export function useProspects() {
   const updateStage = (id: string, stage: ProspectStage) => update(id, { stage });
   const updateNotes = (id: string, notes: string | null) => update(id, { notes });
   const updatePriority = (id: string, priority: ProspectPriority) => update(id, { priority });
+  const updateLastContacted = (id: string, last_contacted: string | null) => update(id, { last_contacted });
 
   const filter = (filters: Filters) => {
     setActiveFilters(filters);
@@ -159,6 +160,7 @@ export function useProspects() {
     updateStage,
     updateNotes,
     updatePriority,
+    updateLastContacted,
     filter,
   };
 }

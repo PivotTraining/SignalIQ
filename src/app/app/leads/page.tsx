@@ -327,11 +327,50 @@ function DiscoverFlow({ onSaved }: { onSaved: () => void }) {
   );
 }
 
-/* ── Main Page ── */
+/* ── Helpers ── */
 const STAGES: ProspectStage[] = ['new', 'contacted', 'meeting', 'proposal', 'closed'];
 
+function formatDate(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ── Inline Date Picker ── */
+function LastContactedCell({
+  value,
+  onSave,
+}: {
+  value: string | null;
+  onSave: (v: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <input
+        type="date"
+        defaultValue={value?.slice(0, 10) ?? ''}
+        onChange={(e) => { onSave(e.target.value || null); setEditing(false); }}
+        onBlur={() => setEditing(false)}
+        autoFocus
+        className="text-xs rounded border-rim bg-surface px-2 py-1"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="text-xs text-ink/50 hover:text-ink whitespace-nowrap"
+    >
+      {value ? formatDate(value) : '+ Set date'}
+    </button>
+  );
+}
+
+/* ── Main Page ── */
 export default function LeadsPage() {
-  const { prospects, loading, error, refresh, create, updateStage, updateNotes, updatePriority, remove, filter } = useProspects();
+  const { prospects, loading, error, refresh, create, updateStage, updateNotes, updatePriority, updateLastContacted, remove, filter } = useProspects();
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('');
@@ -399,6 +438,7 @@ export default function LeadsPage() {
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Priority</th>
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Stage</th>
                 <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Notes</th>
+                <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Last Contacted</th>
                 <th className="text-right px-4 py-3 font-medium whitespace-nowrap">Actions</th>
               </tr>
             </thead>
@@ -428,6 +468,9 @@ export default function LeadsPage() {
                   </td>
                   <td className="px-4 py-3 min-w-[180px] max-w-[240px]">
                     <NotesCell prospectId={p.id} value={p.notes} onSave={(id, notes) => updateNotes(id, notes)} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <LastContactedCell value={p.last_contacted ?? null} onSave={(v) => updateLastContacted(p.id, v)} />
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button onClick={() => remove(p.id)} className="text-xs text-hot/60 hover:text-hot">Remove</button>
